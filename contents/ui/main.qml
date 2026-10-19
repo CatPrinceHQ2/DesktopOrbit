@@ -67,6 +67,10 @@ PlasmoidItem {
         if (saved) { try { var list = JSON.parse(saved); if (Array.isArray(list)) return list } catch (e) {} }
         return defaultLaunchers
     }
+    function refreshLauncherMetadata() {
+        for (var i = 0; i < launchers.length; ++i)
+            launcherMetadataReader.request(launchers[i].file)
+    }
     function saveLaunchers() { plasmoid.configuration.launcherJson = JSON.stringify(launchers) }
     function persistVisibility() { plasmoid.configuration.weatherVisible = weatherVisible }
     function persistEquation() {
@@ -311,11 +315,14 @@ PlasmoidItem {
         if (!path || !path.toString().endsWith(".desktop")) { equationMessage = "Choose a .desktop launcher file."; return }
         var p = path.toLocalFile ? path.toLocalFile() : path.toString().replace(/^file:\/\//, "")
         for (var i=0;i<launchers.length;i++) if (launchers[i].file === p) { equationMessage = "That launcher is already on the orbit."; return }
-        var name = p.split("/").pop().replace(/\.desktop$/i, "").replace(/[-_]/g, " ")
-        var updated = launchers.slice(); updated.push({name:name, icon:"application-x-executable", file:p}); launchers=updated; saveLaunchers(); equationMessage = "Added " + name + "."
+        var fallbackName = p.split("/").pop().replace(/\.desktop$/i, "").replace(/[-_]/g, " ")
+        var updated = launchers.slice(); updated.push({name:fallbackName, icon:"application-x-executable", file:p}); launchers=updated; saveLaunchers()
+        launcherMetadataReader.request(p)
+        equationMessage = "Added " + fallbackName + "."
     }
     function removeLauncher(i) { var updated=launchers.slice(); updated.splice(i,1); launchers=updated; saveLaunchers(); equationMessage="Launcher removed." }
     Component.onCompleted: {
+        refreshLauncherMetadata()
         if (equation === "custom") {
             if (!applyEquation(equationText)) {
                 equation="ellipse"; equationFunction=null; equationText="ellipse"; persistEquation()
@@ -341,6 +348,41 @@ PlasmoidItem {
         onNewData: function(source, data) {
             if (data && data.stderr) root.equationMessage = String(data.stderr).trim().slice(0, 180)
             disconnectSource(source)
+        }
+    }
+
+    P5Support.DataSource {
+        id: launcherMetadataReader
+        engine: "executable"
+        connectedSources: []
+        property var pendingPaths: ({})
+        function request(path) {
+            var helperUrl = Qt.resolvedUrl("../scripts/desktop_entry.py")
+            var helperPath = decodeURIComponent(String(helperUrl).replace(/^file:\/\//, ""))
+            var command = "python3 " + root.safeShell(helperPath) + " " + root.safeShell(path)
+            pendingPaths[command] = path
+            connectSource(command)
+        }
+        onNewData: function(source, data) {
+            var path = pendingPaths[source]
+            delete pendingPaths[source]
+            disconnectSource(source)
+            if (!path || !data || !data.stdout) return
+            try {
+                var metadata = JSON.parse(String(data.stdout))
+                if (metadata.error) return
+                var fallbackName = path.split("/").pop().replace(/\.desktop$/i, "").replace(/[-_]/g, " ")
+                var index = root.launchers.findIndex(function(item) { return item.file === path })
+                if (index < 0) return
+                var updated = root.launchers.slice()
+                updated[index] = {
+                    name: metadata.name || fallbackName,
+                    icon: metadata.icon || "application-x-executable",
+                    file: path
+                }
+                root.launchers = updated
+                root.saveLaunchers()
+            } catch (e) {}
         }
     }
 
@@ -642,7 +684,7 @@ PlasmoidItem {
             }
             RowLayout {
                 Layout.fillWidth: true
-                Controls.Button { text: "Add launcher"; onClicked: launcherPicker.open() }
+                Controls.Button { text: "Add launchers"; onClicked: launcherPicker.open() }
                 Controls.Button { text: "Refresh"; onClicked: { root.launchers = root.loadLaunchers(); root.equationMessage = "Launcher arrangement refreshed." } }
                 Controls.ComboBox {
                     id: launcherSelect
@@ -731,10 +773,13 @@ PlasmoidItem {
 
     FileDialog {
         id: launcherPicker
-        title: "Choose a desktop launcher"
+        title: "Choose desktop launchers"
         nameFilters: ["Desktop launchers (*.desktop)"]
-        fileMode: FileDialog.OpenFile
-        onAccepted: root.addLauncher(selectedFile)
+        fileMode: FileDialog.OpenFiles
+        onAccepted: {
+            for (var i = 0; i < selectedFiles.length; ++i)
+                root.addLauncher(selectedFiles[i])
+        }
     }
     Rectangle {
         anchors.left: parent.left
