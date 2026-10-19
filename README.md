@@ -13,7 +13,8 @@ This is my app, Desktop Orbit. Your icons will orbit around the screen in the de
 
 ## Screenshots
 
-[▶ Watch the Desktop Orbit demo](Desktop%20Orbit%20Demonstration.mp4)
+
+[Download the full-quality version (62 MB)](Desktop%20Orbit%20Demonstration.mp4)
 
 ## Requirements
 
