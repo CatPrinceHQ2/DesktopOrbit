@@ -1,0 +1,13 @@
+{
+  "KPackageStructure": "Plasma/Applet",
+  "X-Plasma-API-Minimum-Version": "6.0",
+  "KPlugin": {
+    "Id": "io.github.catprincehq2.desktop-orbit",
+    "Name": "Desktop Orbit",
+    "Description": "Free placed desktop launchers around a local weather display",
+    "Category": "Utilities",
+    "Icon": "applications-all",
+    "Version": "1.0",
+    "License": "GPL-3.0-or-later"
+  }
+}
