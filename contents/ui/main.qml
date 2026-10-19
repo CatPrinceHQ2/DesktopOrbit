@@ -67,6 +67,32 @@ PlasmoidItem {
         if (saved) { try { var list = JSON.parse(saved); if (Array.isArray(list)) return list } catch (e) {} }
         return defaultLaunchers
     }
+    function desktopEntryValue(contents, key) {
+        var lines = contents.split(/\r?\n/)
+        for (var i = 0; i < lines.length; ++i) {
+            var match = lines[i].match(new RegExp("^" + key + "=(.*)$"))
+            if (match) return match[1].trim()
+        }
+        return ""
+    }
+    function launcherMetadata(path, fallbackName) {
+        var result = { name: fallbackName, icon: "application-x-executable" }
+        try {
+            var request = new XMLHttpRequest()
+            request.open("GET", Qt.resolvedUrl(path), false)
+            request.send()
+            if (request.status === 0 || request.status === 200) {
+                var contents = request.responseText
+                var entry = contents.match(/\[Desktop Entry\]([\s\S]*?)(?:\r?\n\[|$)/)
+                if (entry) contents = entry[1]
+                var name = desktopEntryValue(contents, "Name")
+                var icon = desktopEntryValue(contents, "Icon")
+                if (name) result.name = name
+                if (icon) result.icon = icon
+            }
+        } catch (e) {}
+        return result
+    }
     function saveLaunchers() { plasmoid.configuration.launcherJson = JSON.stringify(launchers) }
     function persistVisibility() { plasmoid.configuration.weatherVisible = weatherVisible }
     function persistEquation() {
@@ -311,8 +337,9 @@ PlasmoidItem {
         if (!path || !path.toString().endsWith(".desktop")) { equationMessage = "Choose a .desktop launcher file."; return }
         var p = path.toLocalFile ? path.toLocalFile() : path.toString().replace(/^file:\/\//, "")
         for (var i=0;i<launchers.length;i++) if (launchers[i].file === p) { equationMessage = "That launcher is already on the orbit."; return }
-        var name = p.split("/").pop().replace(/\.desktop$/i, "").replace(/[-_]/g, " ")
-        var updated = launchers.slice(); updated.push({name:name, icon:"application-x-executable", file:p}); launchers=updated; saveLaunchers(); equationMessage = "Added " + name + "."
+        var fallbackName = p.split("/").pop().replace(/\.desktop$/i, "").replace(/[-_]/g, " ")
+        var metadata = launcherMetadata(p, fallbackName)
+        var updated = launchers.slice(); updated.push({name:metadata.name, icon:metadata.icon, file:p}); launchers=updated; saveLaunchers(); equationMessage = "Added " + metadata.name + "."
     }
     function removeLauncher(i) { var updated=launchers.slice(); updated.splice(i,1); launchers=updated; saveLaunchers(); equationMessage="Launcher removed." }
     Component.onCompleted: {
