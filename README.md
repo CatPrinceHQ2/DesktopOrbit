@@ -11,9 +11,10 @@ This is my app, Desktop Orbit. Your icons will orbit around the screen in the de
 - Rpm slider will make it auto spin.
 - ANY shape you can think of you can use by typing in graphing equations in the typebox. It uses like, a basic math parser, so not literally any, but enough of them.
 
-## Screenshots
-
+## Demonstration
+Click this to see the demonstration (compressed, 9mb for Github)
 https://github.com/user-attachments/assets/fb1be07f-09c7-42b9-90bb-aad4f2898a99
+Click this to..
 [Download the full-quality version (62 MB)](Desktop%20Orbit%20Demonstration.mp4)
 
 ## Requirements
