@@ -15,6 +15,7 @@
     <entry name="weatherLatitude" type="Double"><default>51.5074</default></entry>
     <entry name="weatherLongitude" type="Double"><default>-0.1278</default></entry>
     <entry name="weatherPlace" type="String"><default>London, United Kingdom</default></entry>
+    <entry name="temperatureUnit" type="String"><default>fahrenheit</default></entry>
     <entry name="showWeatherLocation" type="Bool"><default>true</default></entry>
   </group>
 </kcfg>

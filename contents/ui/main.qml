@@ -10,10 +10,10 @@ import "EquationParser.js" as EquationParser
 
 PlasmoidItem {
     id: root
-    implicitWidth: 1920
-    implicitHeight: 1080
-    Layout.minimumWidth: 1920
-    Layout.minimumHeight: 1080
+    implicitWidth: 1024
+    implicitHeight: 576
+    Layout.minimumWidth: 320
+    Layout.minimumHeight: 240
     Plasmoid.backgroundHints: PlasmaCore.Types.NoBackground
 
     readonly property real cx: width / 2
@@ -56,8 +56,9 @@ PlasmoidItem {
     property real pathLength: 0
     property bool pathClosed: true
     property string weatherPlace: plasmoid.configuration.weatherPlace || "London, United Kingdom"
+    property string temperatureUnit: plasmoid.configuration.temperatureUnit || "fahrenheit"
     property string weatherLatitude: plasmoid.configuration.weatherLatitude === undefined ? "51.5074" : String(plasmoid.configuration.weatherLatitude)
-    property string weatherLongitude: plasmoid.configuration.weatherLongitude === undefined ? "-91.65788" : String(plasmoid.configuration.weatherLongitude)
+    property string weatherLongitude: plasmoid.configuration.weatherLongitude === undefined ? "-0.1278" : String(plasmoid.configuration.weatherLongitude)
     property bool showWeatherLocation: plasmoid.configuration.showWeatherLocation === undefined ? true : plasmoid.configuration.showWeatherLocation
     property bool locationSettingsOpen: false
     readonly property real unit: height / 2
@@ -509,9 +510,67 @@ PlasmoidItem {
         if (code >= 51 && code <= 82) return "🌧️"
         return "🌤️"
     }
+    function temperatureSymbol() { return temperatureUnit === "celsius" ? "°C" : "°F" }
+    function editDistance(a, b) {
+        var previous = [], current = [], i, j
+        for (j = 0; j <= b.length; j++) previous[j] = j
+        for (i = 1; i <= a.length; i++) {
+            current = [i]
+            for (j = 1; j <= b.length; j++)
+                current[j] = Math.min(current[j - 1] + 1, previous[j] + 1, previous[j - 1] + (a.charAt(i - 1) === b.charAt(j - 1) ? 0 : 1))
+            previous = current
+        }
+        return previous[b.length]
+    }
+    function normalizePlace(value) {
+        return value.toLocaleLowerCase().replace(/[.,;:()]/g, " ").trim().replace(/\s+/g, " ")
+    }
+    function resolveLocation(query, originalQuery) {
+        var trimmed = query.trim()
+        var userQuery = originalQuery || trimmed
+        if (!trimmed) { equationMessage = "Type a city, region, or place name."; return }
+        equationMessage = "Finding " + userQuery + "…"
+        var req = new XMLHttpRequest()
+        var url = "https://geocoding-api.open-meteo.com/v1/search?name=" + encodeURIComponent(trimmed) + "&count=100&language=en&format=json"
+        req.open("GET", url)
+        req.onreadystatechange = function() {
+            if (req.readyState !== XMLHttpRequest.DONE) return
+            if (req.status !== 200) { equationMessage = "Location search unavailable. Check your connection and try again."; return }
+            try {
+                var data = JSON.parse(req.responseText), results = data.results || []
+                if (!results.length) {
+                    var shorter = trimmed.indexOf(",") >= 0 ? trimmed.split(",")[0].trim() : trimmed.slice(0, -1).trim()
+                    if (shorter && shorter !== trimmed && shorter.length >= 4) { root.resolveLocation(shorter, userQuery); return }
+                }
+                if (!results.length) { equationMessage = "No matching place found. Try a nearby city or a shorter name."; return }
+                var target = normalizePlace(userQuery), best = null, bestScore = Infinity
+                for (var i = 0; i < results.length; i++) {
+                    var place = results[i]
+                    var label = [place.name, place.admin1, place.country].filter(Boolean).join(", ")
+                    var city = normalizePlace(place.name || "")
+                    var full = normalizePlace(label)
+                    var score = Math.min(editDistance(target, city), editDistance(target, full))
+                    // Prefer exact city-name matches, with character edit distance as the ranking rule.
+                    if (target === city) score = 0
+                    if (score < bestScore) { bestScore = score; best = place }
+                }
+                if (!best) { equationMessage = "No matching place found."; return }
+                root.weatherLatitude = String(best.latitude)
+                root.weatherLongitude = String(best.longitude)
+                root.weatherPlace = [best.name, best.admin1, best.country].filter(Boolean).join(", ")
+                plasmoid.configuration.weatherLatitude = best.latitude
+                plasmoid.configuration.weatherLongitude = best.longitude
+                plasmoid.configuration.weatherPlace = root.weatherPlace
+                root.loadWeather()
+                root.locationSettingsOpen = false
+                root.equationMessage = root.weatherPlace === trimmed ? "Weather location updated." : "Using closest name match: " + root.weatherPlace
+            } catch (e) { equationMessage = "Location search returned invalid data." }
+        }
+        req.send()
+    }
     function loadWeather() {
         var req = new XMLHttpRequest()
-        req.open("GET", "https://api.open-meteo.com/v1/forecast?latitude=" + encodeURIComponent(root.weatherLatitude) + "&longitude=" + encodeURIComponent(root.weatherLongitude) + "&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto&forecast_days=1")
+        req.open("GET", "https://api.open-meteo.com/v1/forecast?latitude=" + encodeURIComponent(root.weatherLatitude) + "&longitude=" + encodeURIComponent(root.weatherLongitude) + "&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min&temperature_unit=" + encodeURIComponent(root.temperatureUnit) + "&wind_speed_unit=mph&timezone=auto&forecast_days=1")
         req.onreadystatechange = function() {
             if (req.readyState !== XMLHttpRequest.DONE) return
             if (req.status !== 200) { statusText = "Forecast connection unavailable"; return }
@@ -532,17 +591,12 @@ PlasmoidItem {
         }
         req.send()
     }
-    function applyWeatherLocation() {
-        var lat=Number(locationLatitude.text), lon=Number(locationLongitude.text)
-        if (!Number.isFinite(lat) || !Number.isFinite(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
-            equationMessage = "Enter a valid latitude (−90…90) and longitude (−180…180)."
-            return
-        }
-        weatherLatitude=String(lat); weatherLongitude=String(lon)
-        weatherPlace=locationName.text.trim() || (weatherLatitude + ", " + weatherLongitude)
-        plasmoid.configuration.weatherLatitude=lat; plasmoid.configuration.weatherLongitude=lon
-        plasmoid.configuration.weatherPlace=weatherPlace
-        loadWeather(); locationSettingsOpen=false; equationMessage="Weather location updated."
+    function applyWeatherLocation() { resolveLocation(locationName.text) }
+    function setTemperatureUnit(unitName) {
+        if (unitName !== "celsius" && unitName !== "fahrenheit") return
+        temperatureUnit = unitName
+        plasmoid.configuration.temperatureUnit = unitName
+        loadWeather()
     }
     Timer { interval: 900000; running: true; repeat: true; onTriggered: root.loadWeather() }
 
@@ -620,18 +674,30 @@ PlasmoidItem {
                     Layout.preferredWidth: 30; Layout.preferredHeight: 28
                     onClicked: {
                         locationName.text=root.weatherPlace
-                        locationLatitude.text=root.weatherLatitude
-                        locationLongitude.text=root.weatherLongitude
                         root.locationSettingsOpen=true
                     }
                 }
-                Text { text: root.weatherPlace; color: "white"; font.pixelSize: 20; font.weight: Font.DemiBold; Layout.alignment: Qt.AlignHCenter; Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter; visible: root.showWeatherLocation }
+                Text {
+                    text: root.weatherPlace
+                    color: "white"
+                    font.pixelSize: 20
+                    font.weight: Font.DemiBold
+                    Layout.alignment: Qt.AlignHCenter
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: 0
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.NoWrap
+                    maximumLineCount: 1
+                    elide: Text.ElideRight
+                    clip: true
+                    visible: root.showWeatherLocation
+                }
                 Controls.Button { text: "−"; Accessible.name: "Minimize weather"; Layout.preferredWidth: 30; Layout.preferredHeight: 28; onClicked: root.weatherVisible=false }
             }
-            Text { text: Number.isFinite(root.temperature) ? Math.round(root.temperature) + "°F" : "—°"; color: "white"; font.pixelSize: 54; font.weight: Font.Light; Layout.alignment: Qt.AlignHCenter }
+            Text { text: Number.isFinite(root.temperature) ? Math.round(root.temperature) + root.temperatureSymbol() : "—" + root.temperatureSymbol(); color: "white"; font.pixelSize: 54; font.weight: Font.Light; Layout.alignment: Qt.AlignHCenter }
             Text { text: root.weatherEmoji(root.weatherCode) + "  " + root.statusText; color: "#e7ecf2"; font.pixelSize: 16; Layout.alignment: Qt.AlignHCenter }
             Text {
-                text: Number.isFinite(root.high) ? "H " + Math.round(root.high) + "°   L " + Math.round(root.low) + "°   Feels " + Math.round(root.feelsLike) + "°" : ""
+                text: Number.isFinite(root.high) ? "H " + Math.round(root.high) + root.temperatureSymbol() + "   L " + Math.round(root.low) + root.temperatureSymbol() + "   Feels " + Math.round(root.feelsLike) + root.temperatureSymbol() : ""
                 color: "#c7d2df"; font.pixelSize: 13; Layout.alignment: Qt.AlignHCenter
             }
             Text {
@@ -747,8 +813,8 @@ PlasmoidItem {
     Rectangle {
         id: locationSettingsPanel
         anchors.centerIn: parent
-        width: 360
-        height: 190
+        width: Math.min(360, Math.max(300, parent.width - 20))
+        height: 220
         visible: root.locationSettingsOpen
         z: 91
         radius: 14
@@ -757,15 +823,19 @@ PlasmoidItem {
         ColumnLayout {
             anchors.fill: parent; anchors.margins: 14; spacing: 7
             Text { text: "Weather location"; color: "white"; font.pixelSize: 16; font.weight: Font.DemiBold }
-            Controls.TextField { id: locationName; Layout.fillWidth: true; placeholderText: "Location label"; text: root.weatherPlace }
+            Controls.TextField { id: locationName; Layout.fillWidth: true; placeholderText: "City or place anywhere in the world"; text: root.weatherPlace; onAccepted: root.applyWeatherLocation() }
             RowLayout {
-                Layout.fillWidth: true
-                Controls.TextField { id: locationLatitude; Layout.fillWidth: true; placeholderText: "Latitude"; text: root.weatherLatitude; inputMethodHints: Qt.ImhFormattedNumbersOnly }
-                Controls.TextField { id: locationLongitude; Layout.fillWidth: true; placeholderText: "Longitude"; text: root.weatherLongitude; inputMethodHints: Qt.ImhFormattedNumbersOnly }
+                Text { text: "Temperature"; color: "#c7d2df" }
+                Controls.ComboBox {
+                    id: temperatureUnitSelect
+                    model: ["Fahrenheit (°F)", "Celsius (°C)"]
+                    currentIndex: root.temperatureUnit === "celsius" ? 1 : 0
+                    onActivated: function(index) { root.setTemperatureUnit(index === 1 ? "celsius" : "fahrenheit") }
+                }
             }
             RowLayout {
-                Controls.CheckBox { text: "Show location name"; checked: root.showWeatherLocation; onToggled: { root.showWeatherLocation=checked; plasmoid.configuration.showWeatherLocation=checked } }
                 Item { Layout.fillWidth: true }
+                Controls.CheckBox { text: "Show location name"; checked: root.showWeatherLocation; onToggled: { root.showWeatherLocation=checked; plasmoid.configuration.showWeatherLocation=checked } }
                 Controls.Button { text: "Apply"; onClicked: root.applyWeatherLocation() }
             }
         }

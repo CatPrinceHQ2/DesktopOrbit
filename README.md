@@ -8,6 +8,8 @@ This is my app, Desktop Orbit. Your icons will orbit around the screen in the de
 
 - Here's a fun one; Soundwave mode. All the icons will line up in the center. Play music through the selected sink (you select that on the middle menu) and they will bounce around to it!
 - Weather display. I thought that having weather in the center might be useful because I personally wanted that. I also.. didn't include a way to dismiss it unless you minimize the entire center menu. Sorry.
+- Weather location search accepts city and place names worldwide; temperature can be shown in Fahrenheit or Celsius.
+- The widget can be resized for smaller or non-standard displays.
 - Rpm slider will make it auto spin.
 - ANY shape you can think of you can use by typing in graphing equations in the typebox. It uses like, a basic math parser, so not literally any, but enough of them.
 
